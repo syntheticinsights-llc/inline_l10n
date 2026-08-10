@@ -1,5 +1,5 @@
 name: inline_l10n
-description: Generate Flutter ARB localizations from inline, type-safe l10n markers.
+description: An authoring tool for Flutter's official gen-l10n localization workflow.
 version: 0.1.0
 repository: https://github.com/syntheticinsights-llc/inline_l10n
 issue_tracker: https://github.com/syntheticinsights-llc/inline_l10n/issues
