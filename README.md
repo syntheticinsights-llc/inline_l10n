@@ -1,11 +1,16 @@
 # inline_l10n
 
-Generate Flutter ARB localization entries from English text kept next to the
-typed localization key that uses it.
+An authoring tool for Flutter's official `gen-l10n` localization workflow.
+Keep English ARB source text next to the typed `AppLocalizations` key that uses
+it.
 
-Flutter's `gen-l10n` generates typed localization accessors from ARB files.
-`inline_l10n` reverses the authoring flow: write the English source text at its
-use site, generate `app_en.arb`, then let Flutter generate the accessors.
+`inline_l10n` is not a standalone localization framework. It depends on
+Flutter's `flutter_localizations`, `intl`, ARB files, and `flutter gen-l10n`
+for runtime localization and generated `AppLocalizations` accessors.
+
+Flutter's `gen-l10n` normally generates typed localization accessors from ARB
+files. `inline_l10n` reverses the authoring flow: write English source text at
+its use site, generate `app_en.arb`, then let Flutter generate the accessors.
 
 ```dart
 Text(l10n.settings.inline('Settings'))
@@ -23,28 +28,23 @@ English argument is used only by the generator.
 - Runs `flutter gen-l10n` after updating the ARB files.
 - Fails when the same localization key has conflicting English source text.
 
-This package is for Flutter apps that use the standard `flutter gen-l10n`
-workflow. It does not translate strings.
+This package only changes how you author Flutter localization entries. Flutter
+still loads translations and formats messages at runtime. It does not translate
+strings.
 
-## Install
+## Prerequisites
 
-Add the package to the Flutter app's `pubspec.yaml`:
-
-```yaml
-dependencies:
-  inline_l10n: ^0.1.0
-```
-
-Then run:
-
-```sh
-flutter pub get
-```
-
-The app must already have Flutter localization generation enabled:
+Set up Flutter's official localization system first. Your app needs
+`flutter_localizations`, `intl`, and localization generation enabled:
 
 ```yaml
 # pubspec.yaml
+dependencies:
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+  inline_l10n: ^0.1.0
+
 flutter:
   generate: true
 ```
@@ -52,6 +52,7 @@ flutter:
 The generator requires this ARB layout:
 
 ```yaml
+# l10n.yaml
 arb-dir: lib/resources/l10n
 template-arb-file: app_en.arb
 ```
@@ -66,6 +67,20 @@ output-class: AppLocalizations
 nullable-getter: false
 ```
 
+Register the generated `AppLocalizations` delegates in your `MaterialApp` as
+described by Flutter's localization documentation.
+
+## Install
+
+Run:
+
+```sh
+flutter pub get
+```
+
+`inline_l10n` is a regular dependency because its `String.inline` extension is
+compiled into your app.
+
 ## Usage
 
 Import the runtime marker where localized text is used:
@@ -74,7 +89,8 @@ Import the runtime marker where localized text is used:
 import 'package:inline_l10n/inline_l10n.dart';
 ```
 
-Write the English source text alongside a generated `AppLocalizations` key:
+Write the English source text alongside a Flutter-generated
+`AppLocalizations` key:
 
 ```dart
 final l10n = AppLocalizations.of(context);
