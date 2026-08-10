@@ -1,0 +1,10 @@
+name: inline_l10n
+description: Inline l10n markers and generator tooling for Smartodo.
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ">=3.10.0 <4.0.0"
+
+dependencies:
+  analyzer: ^12.1.0
