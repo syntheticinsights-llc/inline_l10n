@@ -1,4 +1,8 @@
 # Changelog
+## 0.1.1
+
+- Clarify that inline_l10n builds on Flutter's official gen-l10n workflow.
+- Document the flutter_localizations and intl prerequisites.
 
 ## 0.1.0
 
