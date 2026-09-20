@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:yaml/yaml.dart';
 
 // =============================================================================
 // Configuration
@@ -18,7 +19,8 @@ class L10nConfig {
     '.freezed.dart',
     '.gen.dart',
   ];
-  static const l10nDir = 'lib/resources/l10n';
+  static const defaultL10nDir = 'lib/resources/l10n';
+  static const defaultTemplateFile = 'app_en.arb';
   static const sourceDir = 'lib';
 }
 
@@ -82,30 +84,30 @@ class L10nExtractor {
   const L10nExtractor._();
 
   static ExtractionResult extract() {
-    final sourceRoot = Directory(L10nConfig.sourceDir);
-
-    if (!sourceRoot.existsSync()) {
-      stderr.writeln('Source directory not found: ${sourceRoot.path}');
-
-      return const ExtractionResult(
-        entries: {},
-        generationResult: GenerationResult(
-          filesScanned: 0,
-          filesWithEntries: 0,
-          uniqueEntries: 0,
-          totalEntries: 0,
-        ),
-      );
+    final workspace = _findWorkspace();
+    final sourceBase = workspace?.root ?? Directory(L10nConfig.sourceDir);
+    final sourceRoots = workspace == null
+        ? [sourceBase]
+        : [
+            Directory.fromUri(workspace.root.uri.resolve('lib/')),
+            for (final member in workspace.members)
+              Directory.fromUri(workspace.root.uri.resolve('$member/lib/')),
+          ];
+    final existingRoots = sourceRoots.where((root) => root.existsSync()).toList();
+    if (existingRoots.isEmpty) {
+      throw StateError('No lib directories found for localization extraction.');
     }
 
-    final dartFiles = _collectDartFiles(sourceRoot);
+    final dartFiles = [
+      for (final root in existingRoots) ..._collectDartFiles(root),
+    ]..sort((a, b) => a.path.compareTo(b.path));
     final mergedEntries = <String, L10nEntry>{};
 
     var filesWithEntries = 0;
     var totalEntries = 0;
 
     for (final file in dartFiles) {
-      final entries = _extractFileEntries(file);
+      final entries = _extractFileEntries(file, sourceBase);
       if (entries.isEmpty) {
         continue;
       }
@@ -149,11 +151,14 @@ class L10nExtractor {
           .toList()
         ..sort((a, b) => a.path.compareTo(b.path));
 
-  static Map<String, L10nEntry> _extractFileEntries(File file) {
+  static Map<String, L10nEntry> _extractFileEntries(
+    File file,
+    Directory sourceBase,
+  ) {
     final content = file.readAsStringSync();
     final lineStarts = _buildLineStartOffsets(content);
     final parseResult = parseString(content: content);
-    final relativePath = _relativePath(file.path);
+    final relativePath = _relativePath(file, sourceBase);
     final visitor = L10nAutoVisitor(relativePath, lineStarts);
     parseResult.unit.accept(visitor);
 
@@ -181,13 +186,37 @@ class L10nExtractor {
     }
   }
 
-  static String _relativePath(String path) {
-    final prefix = '${L10nConfig.sourceDir}${Platform.pathSeparator}';
-    if (path.startsWith(prefix)) {
-      return path.substring(prefix.length);
-    }
+  static ({Directory root, List<String> members})? _findWorkspace() {
+    var directory = Directory.current.absolute;
 
-    return path;
+    while (true) {
+      final pubspec = File.fromUri(directory.uri.resolve('pubspec.yaml'));
+      if (pubspec.existsSync()) {
+        final document = loadYaml(pubspec.readAsStringSync());
+        if (document is YamlMap && document.containsKey('workspace')) {
+          final members = document['workspace'];
+          if (members is! YamlList || members.any((member) => member is! String)) {
+            throw FormatException('Invalid workspace list in ${pubspec.path}');
+          }
+          return (root: directory, members: members.cast<String>().toList());
+        }
+      }
+
+      final parent = directory.parent;
+      if (parent.path == directory.path) {
+        return null;
+      }
+      directory = parent;
+    }
+  }
+
+  static String _relativePath(File file, Directory sourceBase) {
+    final path = file.absolute.path;
+    final prefix = '${sourceBase.absolute.path}${Platform.pathSeparator}';
+    if (!path.startsWith(prefix)) {
+      throw StateError('Source file outside localization root: $path');
+    }
+    return path.substring(prefix.length).replaceAll(Platform.pathSeparator, '/');
   }
 }
 
@@ -198,7 +227,11 @@ class L10nExtractor {
 class AppEnWriter {
   const AppEnWriter._();
 
-  static int write(Directory l10nRoot, Map<String, L10nEntry> entries) {
+  static int write(
+    Directory l10nRoot,
+    Map<String, L10nEntry> entries, {
+    String templateFileName = L10nConfig.defaultTemplateFile,
+  }) {
     final appEnData = <String, dynamic>{'@@locale': 'en'};
 
     final keys = entries.keys.toList()..sort();
@@ -220,7 +253,7 @@ class AppEnWriter {
     }
 
     final appEnFile = File(
-      '${l10nRoot.path}${Platform.pathSeparator}app_en.arb',
+      '${l10nRoot.path}${Platform.pathSeparator}$templateFileName',
     );
     const encoder = JsonEncoder.withIndent('  ');
     appEnFile.writeAsStringSync('${encoder.convert(appEnData)}\n');
@@ -236,9 +269,12 @@ class AppEnWriter {
 class LocaleArbAligner {
   const LocaleArbAligner._();
 
-  static AlignmentResult align(Directory l10nRoot) {
+  static AlignmentResult align(
+    Directory l10nRoot, {
+    String templateFileName = L10nConfig.defaultTemplateFile,
+  }) {
     final sourceFile = File(
-      '${l10nRoot.path}${Platform.pathSeparator}app_en.arb',
+      '${l10nRoot.path}${Platform.pathSeparator}$templateFileName',
     );
 
     if (!sourceFile.existsSync()) {
@@ -448,10 +484,10 @@ class L10nAutoVisitor extends RecursiveAstVisitor<void> {
     return result.isEmpty ? null : result;
   }
 
-  Map<String, dynamic>? _extractPlaceholders(NodeList<Expression> args) {
+  Map<String, dynamic>? _extractPlaceholders(NodeList<Argument> args) {
     for (final arg in args) {
-      if (arg is NamedExpression && arg.name.label.name == 'placeholders') {
-        return _extractMapLiteral(arg.expression);
+      if (arg is NamedArgument && arg.name.lexeme == 'placeholders') {
+        return _extractMapLiteral(arg.argumentExpression);
       }
     }
 
@@ -537,7 +573,7 @@ class L10nAutoVisitor extends RecursiveAstVisitor<void> {
       return;
     }
 
-    final stringValue = _extractStringValue(args.first);
+    final stringValue = _extractStringValue(args.first.argumentExpression);
     if (stringValue == null) {
       return;
     }
@@ -566,7 +602,47 @@ class L10nAutoVisitor extends RecursiveAstVisitor<void> {
 // Main Entry Point
 // =============================================================================
 
-Future<void> main(List<String> args) async {
+String _resolveL10nDir() {
+  final l10nConfigFile = File('l10n.yaml');
+  if (l10nConfigFile.existsSync()) {
+    for (final rawLine in l10nConfigFile.readAsLinesSync()) {
+      final line = rawLine.trim();
+      if (line.startsWith('arb-dir:')) {
+        final value = line.substring('arb-dir:'.length).trim();
+        final unquoted = value
+            .replaceAll(RegExp(r"""^['"]|['"]$"""), '')
+            .trim();
+        if (unquoted.isNotEmpty) {
+          return unquoted;
+        }
+      }
+    }
+  }
+
+  return L10nConfig.defaultL10nDir;
+}
+
+String _resolveTemplateArbFile() {
+  final l10nConfigFile = File('l10n.yaml');
+  if (l10nConfigFile.existsSync()) {
+    for (final rawLine in l10nConfigFile.readAsLinesSync()) {
+      final line = rawLine.trim();
+      if (line.startsWith('template-arb-file:')) {
+        final value = line.substring('template-arb-file:'.length).trim();
+        final unquoted = value
+            .replaceAll(RegExp(r"""^['"]|['"]$"""), '')
+            .trim();
+        if (unquoted.isNotEmpty) {
+          return unquoted;
+        }
+      }
+    }
+  }
+
+  return L10nConfig.defaultTemplateFile;
+}
+
+Future<void> main() async {
   final mainStopwatch = Stopwatch()..start();
 
   // Step 1: Extract inline l10n entries from Dart files.
@@ -575,7 +651,9 @@ Future<void> main(List<String> args) async {
   extractStopwatch.stop();
 
   // Step 2: Write app_en.arb directly from extracted entries.
-  final l10nRoot = Directory(L10nConfig.l10nDir);
+  final l10nDir = _resolveL10nDir();
+  final templateFileName = _resolveTemplateArbFile();
+  final l10nRoot = Directory(l10nDir);
 
   if (!l10nRoot.existsSync()) {
     stderr.writeln('Localization directory not found: ${l10nRoot.path}');
@@ -583,12 +661,19 @@ Future<void> main(List<String> args) async {
   }
 
   final writeStopwatch = Stopwatch()..start();
-  final writtenCount = AppEnWriter.write(l10nRoot, extractionResult.entries);
+  final writtenCount = AppEnWriter.write(
+    l10nRoot,
+    extractionResult.entries,
+    templateFileName: templateFileName,
+  );
   writeStopwatch.stop();
 
   // Step 3: Align locale ARB files to app_en.arb.
   final alignStopwatch = Stopwatch()..start();
-  final alignmentResult = LocaleArbAligner.align(l10nRoot);
+  final alignmentResult = LocaleArbAligner.align(
+    l10nRoot,
+    templateFileName: templateFileName,
+  );
   alignStopwatch.stop();
 
   // Step 4: Run flutter gen-l10n
@@ -603,6 +688,7 @@ Future<void> main(List<String> args) async {
     extractionResult.generationResult,
     writtenCount,
     alignmentResult,
+    templateFileName,
   );
 
   _printTimingSummary(
@@ -611,6 +697,7 @@ Future<void> main(List<String> args) async {
     alignStopwatch,
     flutterStopwatch,
     mainStopwatch,
+    templateFileName,
   );
 }
 
@@ -618,6 +705,7 @@ void _printResults(
   GenerationResult result,
   int writtenCount,
   AlignmentResult alignmentResult,
+  String templateFileName,
 ) {
   stdout.writeln('Scanned ${result.filesScanned} Dart file(s).');
 
@@ -634,7 +722,7 @@ void _printResults(
   final entryWord = writtenCount == 1 ? 'entry' : 'entries';
 
   stdout
-    ..writeln('Wrote $writtenCount $entryWord to app_en.arb.')
+    ..writeln('Wrote $writtenCount $entryWord to $templateFileName.')
     ..writeln(
       '''Aligned ${alignmentResult.updatedLocaleFiles} of ${alignmentResult.totalLocaleFiles} locale ARB file(s).''',
     );
@@ -646,13 +734,14 @@ void _printTimingSummary(
   Stopwatch alignStopwatch,
   Stopwatch flutterStopwatch,
   Stopwatch mainStopwatch,
+  String templateFileName,
 ) {
   stdout
     ..writeln('\n⏱️  Timing Summary:')
     ..writeln(
       '''   AST parsing & extraction: ${extractStopwatch.elapsedMilliseconds}ms''',
     )
-    ..writeln('   app_en.arb write: ${writeStopwatch.elapsedMilliseconds}ms')
+    ..writeln('   $templateFileName write: ${writeStopwatch.elapsedMilliseconds}ms')
     ..writeln('   locale ARB align: ${alignStopwatch.elapsedMilliseconds}ms')
     ..writeln('   flutter gen-l10n: ${flutterStopwatch.elapsedMilliseconds}ms')
     ..writeln('   Total: ${mainStopwatch.elapsedMilliseconds}ms');

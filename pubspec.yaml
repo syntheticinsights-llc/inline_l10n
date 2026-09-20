@@ -1,6 +1,6 @@
 name: inline_l10n
 description: An authoring tool for Flutter's official gen-l10n localization workflow.
-version: 0.1.1
+version: 0.1.4
 repository: https://github.com/syntheticinsights-llc/inline_l10n
 issue_tracker: https://github.com/syntheticinsights-llc/inline_l10n/issues
 topics:
@@ -14,4 +14,5 @@ environment:
   sdk: ">=3.10.0 <4.0.0"
 
 dependencies:
-  analyzer: ^12.1.0
+  analyzer: ^13.3.0
+  yaml: ^3.1.3

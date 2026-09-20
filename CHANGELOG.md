@@ -1,4 +1,18 @@
 # Changelog
+
+## 0.1.4
+
+- Extract inline localization entries from every package's `lib/` in a Dart workspace.
+
+## 0.1.3
+
+- Read the ARB directory and template file from `l10n.yaml`.
+- Fix localization extraction with analyzer 13.
+
+## 0.1.2
+
+- Support analyzer 13's `Argument` and `NamedArgument` AST APIs.
+
 ## 0.1.1
 
 - Clarify that inline_l10n builds on Flutter's official gen-l10n workflow.

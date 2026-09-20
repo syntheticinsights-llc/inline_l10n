@@ -21,8 +21,8 @@ English argument is used only by the generator.
 
 ## What it does
 
-- Extracts `.inline(...)` calls from Dart source with the Dart analyzer AST.
-- Writes `lib/resources/l10n/app_en.arb` from the extracted English strings.
+- Extracts `.inline(...)` calls from the current package's `lib/`, or every package's `lib/` in a Dart workspace, with the Dart analyzer AST.
+- Writes the English ARB file specified by `l10n.yaml` from the extracted strings.
 - Adds descriptions pointing to the defining source file.
 - Keeps every non-English ARB file aligned with the generated English keys.
 - Runs `flutter gen-l10n` after updating the ARB files.
@@ -49,7 +49,7 @@ flutter:
   generate: true
 ```
 
-The generator requires this ARB layout:
+The generator reads the ARB directory and template filename from `l10n.yaml`:
 
 ```yaml
 # l10n.yaml
@@ -112,7 +112,7 @@ Text(
 );
 ```
 
-Run the generator from the Flutter app root:
+Run the generator from the Flutter app root. In a Dart workspace, it finds the workspace root and scans each member package's `lib/`:
 
 ```sh
 dart run inline_l10n:gen_l10n
