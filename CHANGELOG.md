@@ -1,10 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
-- Add `--watch` mode with incremental parsing, skipping `flutter gen-l10n` when
-  no ARB file changed.
-- Report generator errors without stack traces.
+- Add `--watch` (`-w`) mode: after a full generation, it watches every scanned
+  `lib/` directory and the ARB directory, re-parses only changed Dart files, and
+  runs `flutter gen-l10n` only when an ARB file changed.
+- Watch mode reports duplicate keys, Dart syntax errors, and invalid ARB JSON
+  without stopping, and skips ARB updates while any source file fails to parse
+  so existing translations are never dropped.
+- Only rewrite `app_en.arb` when its content changes.
+- Report generator errors as a single message with exit code 1 instead of a
+  stack trace; unknown arguments exit with code 64.
+- Run `flutter gen-l10n` through the shell on Windows so `flutter.bat` is found.
+- Parse `l10n.yaml` with a YAML parser instead of line matching.
 
 ## 0.1.4
 
