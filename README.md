@@ -122,6 +122,20 @@ It creates or replaces `app_en.arb`, removes obsolete keys from every other
 `app_*.arb` file, and invokes `flutter gen-l10n`. Commit the generated ARB and
 Flutter localization output after reviewing the changes.
 
+### Watch mode
+
+```sh
+dart run inline_l10n:gen_l10n --watch
+```
+
+Watch mode runs a full generation, then keeps watching every scanned `lib/`
+directory and the ARB directory. When a Dart file changes, only that file is
+parsed again. `app_en.arb` and the locale ARB files are rewritten only when
+their content changes, and `flutter gen-l10n` runs only when an ARB file
+changed. Errors such as duplicate keys, Dart syntax errors, or invalid ARB JSON
+are reported without stopping the watcher. Restart it after changing
+`l10n.yaml` or the workspace members. Press Ctrl+C to stop.
+
 ## Recognized markers
 
 The generator recognizes these forms:

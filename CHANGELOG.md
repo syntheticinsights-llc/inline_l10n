@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add `--watch` mode with incremental parsing, skipping `flutter gen-l10n` when
+  no ARB file changed.
+- Report generator errors without stack traces.
+
 ## 0.1.4
 
 - Extract inline localization entries from every package's `lib/` in a Dart workspace.
