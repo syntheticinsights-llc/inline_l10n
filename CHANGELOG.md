@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Keep the declared app languages in step with the ARB files on every run:
   `CFBundleLocalizations` in the iOS and macOS `Info.plist`, and the Android
