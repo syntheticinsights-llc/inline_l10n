@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'models.dart';
+import 'process_runner.dart';
 
 /// A shell command (`--post-gen`) to run after every generation, for the
 /// project's own steps that derive from the ARB files, such as native string
@@ -18,28 +19,23 @@ import 'models.dart';
 class PostGenCommand {
   const PostGenCommand(this.command);
 
+  /// How long the command may run before it is killed, for the same reason as
+  /// `FlutterL10nRunner.timeout`: a command that never ends must not hold the
+  /// watch session's cycle open.
+  static const timeout = Duration(minutes: 2);
+
   final String command;
 
   /// Runs [command] and returns its exit code.
   Future<int> run() async {
     stdout.writeln('Running $command...');
-    final Process process;
-    try {
-      process = await Process.start(
-        Platform.isWindows ? 'cmd' : 'sh',
-        [if (Platform.isWindows) '/c' else '-c', command],
-      );
-    } on ProcessException catch (error) {
-      throw L10nException('Failed to run $command: ${error.message}');
-    }
-    final outputFuture = Future.wait([
-      process.stdout.forEach(stdout.add),
-      process.stderr.forEach(stderr.add),
-    ]);
-    final exitCode = await process.exitCode;
-    await outputFuture;
 
-    return exitCode;
+    return runProcess(
+      Platform.isWindows ? 'cmd' : 'sh',
+      [if (Platform.isWindows) '/c' else '-c', command],
+      description: command,
+      timeout: timeout,
+    );
   }
 
   /// Runs [command] and throws when it fails.
