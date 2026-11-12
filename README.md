@@ -45,7 +45,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: any
-  inline_l10n: ^0.4.0
+  inline_l10n: ^0.5.0
 
 flutter:
   generate: true

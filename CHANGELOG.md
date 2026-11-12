@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - **Breaking:** the `--issues-file` JSON is now the status of the last run
   instead of a list of warnings: `lastRun` (UTC), `status` (`ok`, `failed`,
