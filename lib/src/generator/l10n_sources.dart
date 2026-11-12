@@ -7,6 +7,8 @@ import 'l10n_config.dart';
 import 'models.dart';
 import 'workspace.dart';
 
+typedef _FileScan = ({Map<String, L10nEntry> entries, List<L10nIssue> issues});
+
 class L10nSources {
   L10nSources._(this.sourceBase, this.roots);
 
@@ -36,7 +38,7 @@ class L10nSources {
   final Directory sourceBase;
   final List<Directory> roots;
 
-  final _fileEntries = <String, Map<String, L10nEntry>>{};
+  final _files = <String, _FileScan>{};
 
   List<File> collectDartFiles() => [
     for (final root in roots) ..._collectDartFiles(root),
@@ -50,7 +52,7 @@ class L10nSources {
       );
 
   void scanAll() {
-    _fileEntries.clear();
+    _files.clear();
     for (final file in collectDartFiles()) {
       refresh(file.path);
     }
@@ -59,17 +61,17 @@ class L10nSources {
   void refresh(String path) {
     final file = File(path);
     if (!file.existsSync()) {
-      _fileEntries.remove(path);
+      _files.remove(path);
       return;
     }
 
     try {
-      _fileEntries[path] = _extractFileEntries(file, sourceBase);
+      _files[path] = _scanFile(file, sourceBase);
     } on ArgumentError catch (error) {
       throw L10nException('Failed to parse $path\n${error.message}');
     } on FileSystemException catch (error) {
       if (!file.existsSync()) {
-        _fileEntries.remove(path);
+        _files.remove(path);
         return;
       }
       throw L10nException('Failed to read $path\n${error.message}');
@@ -78,13 +80,16 @@ class L10nSources {
 
   ExtractionResult merge() {
     final mergedEntries = <String, L10nEntry>{};
-    final paths = _fileEntries.keys.toList()..sort();
+    final issues = <L10nIssue>[];
+    final paths = _files.keys.toList()..sort();
 
     var filesWithEntries = 0;
     var totalEntries = 0;
 
     for (final path in paths) {
-      final entries = _fileEntries[path]!;
+      final file = _files[path]!;
+      issues.addAll(file.issues);
+      final entries = file.entries;
       if (entries.isEmpty) {
         continue;
       }
@@ -96,8 +101,9 @@ class L10nSources {
 
     return ExtractionResult(
       entries: mergedEntries,
+      issues: issues,
       generationResult: GenerationResult(
-        filesScanned: _fileEntries.length,
+        filesScanned: _files.length,
         filesWithEntries: filesWithEntries,
         uniqueEntries: mergedEntries.length,
         totalEntries: totalEntries,
@@ -126,7 +132,7 @@ class L10nSources {
       )
       .toList();
 
-  static Map<String, L10nEntry> _extractFileEntries(
+  static _FileScan _scanFile(
     File file,
     Directory sourceBase,
   ) {
@@ -137,7 +143,7 @@ class L10nSources {
     final visitor = L10nAutoVisitor(relativePath, lineStarts);
     parseResult.unit.accept(visitor);
 
-    return visitor.entries;
+    return (entries: visitor.entries, issues: visitor.issues);
   }
 
   static bool _isGeneratedDartFile(String path) =>

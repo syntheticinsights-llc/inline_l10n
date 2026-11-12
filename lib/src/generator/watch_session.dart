@@ -4,13 +4,15 @@ import 'dart:io';
 import 'package:watcher/watcher.dart';
 
 import 'flutter_l10n_runner.dart';
+import 'issues_report.dart';
 import 'l10n_config.dart';
 import 'l10n_pipeline.dart';
 import 'models.dart';
 
 class L10nWatchSession {
-  L10nWatchSession(this.pipeline);
+  L10nWatchSession(this.pipeline, this.issuesReport);
 
+  final IssuesReport issuesReport;
   final L10nPipeline pipeline;
 
   final _brokenSources = <String>{};
@@ -127,6 +129,7 @@ class L10nWatchSession {
     final stopwatch = Stopwatch()..start();
     try {
       final extraction = pipeline.sources.merge();
+      _reportIssues(extraction.issues);
       final writeResult = pipeline.writeArbs(extraction);
       _refreshArbSnapshot();
       _genL10nPending |= writeResult.changed;
@@ -155,6 +158,13 @@ class L10nWatchSession {
       _reportCycleFailure(error);
     } on FileSystemException catch (error) {
       _reportCycleFailure(error);
+    }
+  }
+
+  void _reportIssues(List<L10nIssue> issues) {
+    final warning = issuesReport.update(issues);
+    if (warning != null) {
+      stderr.writeln('[${_timestamp()}] $warning');
     }
   }
 

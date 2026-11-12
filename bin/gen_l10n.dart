@@ -1,35 +1,64 @@
 import 'dart:io';
 
+import 'package:args/args.dart';
 import 'package:inline_l10n/src/generator/flutter_l10n_runner.dart';
+import 'package:inline_l10n/src/generator/issues_report.dart';
 import 'package:inline_l10n/src/generator/l10n_pipeline.dart';
 import 'package:inline_l10n/src/generator/models.dart';
 import 'package:inline_l10n/src/generator/watch_session.dart';
 
 Future<void> main(List<String> arguments) async {
-  final unknownArguments = arguments.where(
-    (argument) => argument != '--watch' && argument != '-w',
-  );
-  if (unknownArguments.isNotEmpty) {
+  final parser = ArgParser()
+    ..addFlag(
+      'watch',
+      abbr: 'w',
+      negatable: false,
+      help: 'Keep watching sources and ARB files after the first generation.',
+    )
+    ..addOption(
+      'issues-file',
+      valueHelp: 'path',
+      help:
+          'Also write .inline(...) calls that were not extracted to this '
+          'JSON file.',
+    );
+
+  final ArgResults options;
+  try {
+    options = parser.parse(arguments);
+  } on FormatException catch (error) {
     stderr
-      ..writeln('Unknown argument(s): ${unknownArguments.join(' ')}')
-      ..writeln('Usage: dart run inline_l10n:gen_l10n [--watch | -w]');
+      ..writeln(error.message)
+      ..writeln('Usage: dart run inline_l10n:gen_l10n [options]')
+      ..writeln(parser.usage);
     exit(64);
   }
 
+  final issuesPath = options.option('issues-file');
+  final issuesReport = IssuesReport(
+    file: issuesPath == null ? null : File(issuesPath),
+  );
+
   try {
     final pipeline = L10nPipeline.resolve();
-    if (arguments.isNotEmpty) {
-      await L10nWatchSession(pipeline).start();
+    if (options.flag('watch')) {
+      await L10nWatchSession(pipeline, issuesReport).start();
       exit(0);
     }
-    await _generateOnce(pipeline);
+    await _generateOnce(pipeline, issuesReport);
   } on L10nException catch (error) {
+    stderr.writeln(error);
+    exit(1);
+  } on FileSystemException catch (error) {
     stderr.writeln(error);
     exit(1);
   }
 }
 
-Future<void> _generateOnce(L10nPipeline pipeline) async {
+Future<void> _generateOnce(
+  L10nPipeline pipeline,
+  IssuesReport issuesReport,
+) async {
   final mainStopwatch = Stopwatch()..start();
 
   // Step 1: Extract inline l10n entries from Dart files.
@@ -37,6 +66,10 @@ Future<void> _generateOnce(L10nPipeline pipeline) async {
   pipeline.sources.scanAll();
   final extractionResult = pipeline.sources.merge();
   extractStopwatch.stop();
+  final issuesWarning = issuesReport.update(extractionResult.issues);
+  if (issuesWarning != null) {
+    stderr.writeln('$issuesWarning\n');
+  }
 
   // Step 2: Write app_en.arb and align locale ARB files to it.
   final writeStopwatch = Stopwatch()..start();

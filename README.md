@@ -27,6 +27,7 @@ English argument is used only by the generator.
 - Keeps every non-English ARB file aligned with the generated English keys.
 - Runs `flutter gen-l10n` after updating the ARB files.
 - Fails when the same localization key has conflicting English source text.
+- Warns about `.inline(...)` calls it cannot extract, and can list them in a JSON file.
 
 This package only changes how you author Flutter localization entries. Flutter
 still loads translations and formats messages at runtime. It does not translate
@@ -149,6 +150,42 @@ AppLocalizations.of(context).key.inline('English text');
 For local variables, the localization object must be named `l10n`. The source
 argument must be a string literal or adjacent string literals. String
 interpolation is not extracted; use ICU placeholders instead.
+
+## Calls that are not extracted
+
+`inline()` returns its receiver, so a call the generator cannot read still
+compiles and runs, and silently shows untranslated text. The generator warns
+about these calls instead of skipping them:
+
+- `unrecognized-receiver`: the English text is a string literal, but the
+  receiver is not one of the recognized markers, e.g.
+  `'Settings'.inline('Settings')` or `loc.settings.inline('Settings')`.
+- `non-literal-text`: the receiver is a recognized key, but the English text
+  is not a string literal, e.g. `l10n.settings.inline(text)`.
+
+Calls with neither a recognized receiver nor a string literal are not
+localization markers and are left alone.
+
+The warning does not fail the run: every other entry is still written, and the
+exit code is unchanged. Watch mode prints it only when the list changes. To
+also keep the current list in a file, pass `--issues-file`:
+
+```sh
+dart run inline_l10n:gen_l10n --watch --issues-file=inline_issues.json
+```
+
+The file is rewritten on every run and holds `[]` when there are no issues:
+
+```json
+[
+  {
+    "file": "lib/attachments.dart",
+    "line": 42,
+    "issue": "unrecognized-receiver",
+    "code": "'Dropping folders is not supported'.inline('Dropping folders is not supported')"
+  }
+]
+```
 
 ## Important behavior
 

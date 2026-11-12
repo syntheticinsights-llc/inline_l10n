@@ -21,6 +21,64 @@ class L10nEntry {
   final String text;
 }
 
+/// Why an `.inline(...)` call that looks like a localization marker was not
+/// extracted.
+enum L10nIssueKind {
+  /// The receiver is not a recognized localization key, e.g.
+  /// `'Settings'.inline('Settings')` or `loc.settings.inline('Settings')`.
+  unrecognizedReceiver(
+    'unrecognized-receiver',
+    'The receiver is not a recognized localization key. '
+        'Use l10n.key.inline(...) or '
+        'AppLocalizations.of(context).key.inline(...).',
+  ),
+
+  /// The English text is not a string literal, so it cannot be read without
+  /// running the code.
+  nonLiteralText(
+    'non-literal-text',
+    'The English text must be a string literal or adjacent string literals, '
+        'without interpolation.',
+  );
+
+  const L10nIssueKind(this.id, this.message);
+
+  /// Stable identifier written to the issues file.
+  final String id;
+  final String message;
+}
+
+/// An `.inline(...)` call that looks like a localization marker but was not
+/// extracted.
+///
+/// A call counts as a marker when its receiver is a localization key or its
+/// first argument is a string literal. Calls with neither are left alone: the
+/// generator only sees syntax, and another API may also define an `inline`
+/// method.
+class L10nIssue {
+  const L10nIssue({
+    required this.filePath,
+    required this.line,
+    required this.kind,
+    required this.code,
+  });
+
+  final String code;
+  final String filePath;
+  final L10nIssueKind kind;
+  final int line;
+
+  Map<String, Object> toJson() => {
+    'file': filePath,
+    'line': line,
+    'issue': kind.id,
+    'code': code,
+  };
+
+  @override
+  String toString() => '$filePath:$line: ${kind.message}\n    $code';
+}
+
 class GenerationResult {
   const GenerationResult({
     required this.filesScanned,
@@ -38,11 +96,13 @@ class GenerationResult {
 class ExtractionResult {
   const ExtractionResult({
     required this.entries,
+    required this.issues,
     required this.generationResult,
   });
 
   final Map<String, L10nEntry> entries;
   final GenerationResult generationResult;
+  final List<L10nIssue> issues;
 }
 
 class AlignmentResult {

@@ -7,6 +7,7 @@ class L10nAutoVisitor extends RecursiveAstVisitor<void> {
   L10nAutoVisitor(this.filePath, this.lineStarts);
 
   final entries = <String, L10nEntry>{};
+  final issues = <L10nIssue>[];
 
   final String filePath;
   final List<int> lineStarts;
@@ -160,24 +161,44 @@ class L10nAutoVisitor extends RecursiveAstVisitor<void> {
     return 1;
   }
 
+  /// Records the call as an entry when both its key and English text can be
+  /// read, as an [L10nIssue] when only one of them can, and ignores it when
+  /// neither can, since then it is not a localization marker.
   void _processInlineCall(MethodInvocation node) {
-    final key = _extractKey(node.target);
-    if (key == null) {
-      return;
-    }
-
     final args = node.argumentList.arguments;
     if (args.isEmpty) {
       return;
     }
 
-    final stringValue = _extractStringValue(args.first.argumentExpression);
-    if (stringValue == null) {
-      return;
-    }
+    final key = _extractKey(node.target);
+    final text = _extractStringValue(args.first.argumentExpression);
 
+    switch ((key, text)) {
+      case (final key?, final text?):
+        _addEntry(node, key, text);
+      case (null, _?):
+        _addIssue(node, L10nIssueKind.unrecognizedReceiver);
+      case (_?, null):
+        _addIssue(node, L10nIssueKind.nonLiteralText);
+      case (null, null):
+        return;
+    }
+  }
+
+  void _addIssue(MethodInvocation node, L10nIssueKind kind) {
+    issues.add(
+      L10nIssue(
+        filePath: filePath,
+        line: _lineNumberAt(node.offset, lineStarts),
+        kind: kind,
+        code: node.toSource(),
+      ),
+    );
+  }
+
+  void _addEntry(MethodInvocation node, String key, String stringValue) {
     final line = _lineNumberAt(node.offset, lineStarts);
-    final placeholders = _extractPlaceholders(args);
+    final placeholders = _extractPlaceholders(node.argumentList.arguments);
 
     final existing = entries[key];
 

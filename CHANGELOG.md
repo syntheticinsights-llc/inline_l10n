@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0
+
+- Warn about `.inline(...)` calls that cannot be extracted instead of skipping
+  them silently: a string-literal text on a receiver that is not a recognized
+  key (`unrecognized-receiver`), or a recognized key whose text is not a
+  string literal (`non-literal-text`). The run still succeeds, and watch mode
+  prints the warning only when the list changes.
+- Add `--issues-file <path>` to keep the current list of these calls in a JSON
+  file.
+- Parse command-line options with `package:args`; unknown options print the
+  list of supported options.
+
 ## 0.2.0
 
 - Add `--watch` (`-w`) mode: after a full generation, it watches every scanned
