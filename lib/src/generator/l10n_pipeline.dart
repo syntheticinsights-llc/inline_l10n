@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'app_en_writer.dart';
@@ -5,6 +6,7 @@ import 'l10n_config.dart';
 import 'l10n_sources.dart';
 import 'locale_arb_aligner.dart';
 import 'models.dart';
+import 'platform_locales.dart';
 import 'workspace.dart';
 
 class L10nPipeline {
@@ -41,6 +43,30 @@ class L10nPipeline {
     for (final file in l10nRoot.listSync().whereType<File>())
       if (file.path.endsWith('.arb')) file.path: file.readAsStringSync(),
   };
+
+  /// Rewrites the locales the native app shells declare to match the ARB
+  /// files, and returns the paths that changed. See [PlatformLocales].
+  List<String> syncPlatformLocales() => PlatformLocales.sync(readArbLocales());
+
+  /// The locale of every ARB file, read the way `flutter gen-l10n` does: its
+  /// `@@locale`, or else the locale suffix of the file name.
+  List<String> readArbLocales() => [
+    for (final file in l10nRoot.listSync().whereType<File>())
+      if (file.path.endsWith('.arb')) ?_localeOf(file),
+  ];
+
+  static final _fileNameLocale = RegExp(
+    r'_([a-z]{2,3}(?:_[A-Z][a-z]{3})?(?:_(?:[A-Z]{2}|\d{3}))?)\.arb$',
+  );
+
+  static String? _localeOf(File file) {
+    final data = jsonDecode(file.readAsStringSync());
+    if (data case {'@@locale': final String locale} when locale.isNotEmpty) {
+      return locale;
+    }
+
+    return _fileNameLocale.firstMatch(file.path)?.group(1);
+  }
 
   ArbWriteResult writeArbs(ExtractionResult extraction) => ArbWriteResult(
     templateChanged: AppEnWriter.write(

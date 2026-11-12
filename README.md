@@ -26,6 +26,7 @@ English argument is used only by the generator.
 - Adds descriptions pointing to the defining source file.
 - Keeps every non-English ARB file aligned with the generated English keys.
 - Runs `flutter gen-l10n` after updating the ARB files.
+- Keeps the languages the native app shells declare equal to the ARB files: `CFBundleLocalizations` in `ios/Runner/Info.plist` and `macos/Runner/Info.plist`, and the Android locale config named by `android:localeConfig` in `AndroidManifest.xml`. Without these, iOS and macOS may not use a language the app ships, and the system per-app language settings do not offer it. Only the locale entries are rewritten; missing shells are skipped.
 - Fails when the same localization key has conflicting English source text.
 - Warns about `.inline(...)` calls it cannot extract, and can list them in a JSON file.
 
@@ -186,6 +187,27 @@ The file is rewritten on every run and holds `[]` when there are no issues:
   }
 ]
 ```
+
+## Native declarations and other derived files
+
+Every run also rewrites the languages the native app shells declare from the
+ARB files: `CFBundleLocalizations` in `ios/Runner/Info.plist` and
+`macos/Runner/Info.plist`, and the Android locale config that
+`android:localeConfig` names in `AndroidManifest.xml`. Only the locale entries
+change; a shell that does not exist is skipped.
+
+For files only your project derives from the ARB files, such as native string
+resources of home screen widgets, pass a command to run after every
+generation:
+
+```sh
+dart run inline_l10n:gen_l10n --watch --post-gen="dart run tool/sync_native.dart"
+```
+
+The command runs in a shell, in the generator's working directory, once
+`flutter gen-l10n` has finished: after a single run, and in watch mode after
+every cycle that ran `flutter gen-l10n`. When it fails, a single run exits with
+code 1, and watch mode reports it and keeps watching.
 
 ## Important behavior
 

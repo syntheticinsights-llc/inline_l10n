@@ -8,12 +8,14 @@ import 'issues_report.dart';
 import 'l10n_config.dart';
 import 'l10n_pipeline.dart';
 import 'models.dart';
+import 'post_gen_command.dart';
 
 class L10nWatchSession {
-  L10nWatchSession(this.pipeline, this.issuesReport);
+  L10nWatchSession(this.pipeline, this.issuesReport, [this.postGen]);
 
   final IssuesReport issuesReport;
   final L10nPipeline pipeline;
+  final PostGenCommand? postGen;
 
   final _brokenSources = <String>{};
   final _changedSources = <String>{};
@@ -131,6 +133,11 @@ class L10nWatchSession {
       final extraction = pipeline.sources.merge();
       _reportIssues(extraction.issues);
       final writeResult = pipeline.writeArbs(extraction);
+      for (final path in pipeline.syncPlatformLocales()) {
+        stdout.writeln(
+          '[${_timestamp()}] Updated the declared locales in $path.',
+        );
+      }
       _refreshArbSnapshot();
       _genL10nPending |= writeResult.changed;
       if (!_genL10nPending) {
@@ -154,10 +161,26 @@ class L10nWatchSession {
         '${writeResult.alignment.totalLocaleFiles} locale ARB file(s) '
         '(${stopwatch.elapsedMilliseconds}ms).',
       );
+      await _runPostGen();
     } on L10nException catch (error) {
       _reportCycleFailure(error);
     } on FileSystemException catch (error) {
       _reportCycleFailure(error);
+    }
+  }
+
+  /// Reports a failing [postGen] without failing the cycle: the ARB files
+  /// and the generated code are already up to date.
+  Future<void> _runPostGen() async {
+    final postGen = this.postGen;
+    if (postGen == null) {
+      return;
+    }
+    final exitCode = await postGen.run();
+    if (exitCode != 0) {
+      stderr.writeln(
+        '[${_timestamp()}] ${postGen.command} failed with exit code $exitCode.',
+      );
     }
   }
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Keep the declared app languages in step with the ARB files on every run:
+  `CFBundleLocalizations` in the iOS and macOS `Info.plist`, and the Android
+  locale config named by `android:localeConfig`. Only the locale entries are
+  rewritten, the key is added to a plist that lacks it, and missing shells are
+  skipped.
+- Add `--post-gen <command>` to run a shell command after every generation,
+  for files a project derives from the ARB files itself. A failing command
+  fails a single run; watch mode reports it and keeps watching.
+
 ## 0.3.0
 
 - Warn about `.inline(...)` calls that cannot be extracted instead of skipping

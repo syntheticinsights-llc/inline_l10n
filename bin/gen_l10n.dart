@@ -5,6 +5,7 @@ import 'package:inline_l10n/src/generator/flutter_l10n_runner.dart';
 import 'package:inline_l10n/src/generator/issues_report.dart';
 import 'package:inline_l10n/src/generator/l10n_pipeline.dart';
 import 'package:inline_l10n/src/generator/models.dart';
+import 'package:inline_l10n/src/generator/post_gen_command.dart';
 import 'package:inline_l10n/src/generator/watch_session.dart';
 
 Future<void> main(List<String> arguments) async {
@@ -21,6 +22,13 @@ Future<void> main(List<String> arguments) async {
       help:
           'Also write .inline(...) calls that were not extracted to this '
           'JSON file.',
+    )
+    ..addOption(
+      'post-gen',
+      valueHelp: 'command',
+      help:
+          'Run this shell command after every generation, such as a script '
+          'that derives native resources from the ARB files.',
     );
 
   final ArgResults options;
@@ -39,13 +47,19 @@ Future<void> main(List<String> arguments) async {
     file: issuesPath == null ? null : File(issuesPath),
   );
 
+  final postGenCommand = options.option('post-gen');
+  final postGen = postGenCommand == null
+      ? null
+      : PostGenCommand(postGenCommand);
+
   try {
     final pipeline = L10nPipeline.resolve();
     if (options.flag('watch')) {
-      await L10nWatchSession(pipeline, issuesReport).start();
+      await L10nWatchSession(pipeline, issuesReport, postGen).start();
       exit(0);
     }
     await _generateOnce(pipeline, issuesReport);
+    await postGen?.runOrThrow();
   } on L10nException catch (error) {
     stderr.writeln(error);
     exit(1);
@@ -74,6 +88,7 @@ Future<void> _generateOnce(
   // Step 2: Write app_en.arb and align locale ARB files to it.
   final writeStopwatch = Stopwatch()..start();
   final writeResult = pipeline.writeArbs(extractionResult);
+  final platformChanges = pipeline.syncPlatformLocales();
   writeStopwatch.stop();
 
   // Step 3: Run flutter gen-l10n
@@ -88,6 +103,9 @@ Future<void> _generateOnce(
     writeResult,
     pipeline.templateFileName,
   );
+  for (final path in platformChanges) {
+    stdout.writeln('Updated the declared locales in $path.');
+  }
 
   _printTimingSummary(
     extractStopwatch,
