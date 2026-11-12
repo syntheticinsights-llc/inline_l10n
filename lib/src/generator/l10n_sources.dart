@@ -68,13 +68,19 @@ class L10nSources {
     try {
       _files[path] = _scanFile(file, sourceBase);
     } on ArgumentError catch (error) {
-      throw L10nException('Failed to parse $path\n${error.message}');
+      throw L10nException(
+        'Failed to parse $path\n${error.message}',
+        locations: [_relativePath(file, sourceBase)],
+      );
     } on FileSystemException catch (error) {
       if (!file.existsSync()) {
         _files.remove(path);
         return;
       }
-      throw L10nException('Failed to read $path\n${error.message}');
+      throw L10nException(
+        'Failed to read $path\n${error.message}',
+        locations: [_relativePath(file, sourceBase)],
+      );
     }
   }
 
@@ -157,9 +163,7 @@ class L10nSources {
       final existing = mergedEntries[key];
 
       if (existing != null && existing.text != value.text) {
-        throw L10nException(
-          '''Duplicate l10n key "$key" with different content.\n  First defined at: ${existing.filePath}:${existing.line}\n  Conflict at: ${value.filePath}:${value.line}''',
-        );
+        throw L10nException.duplicateKey(key, existing, value);
       }
 
       // Keep the latest metadata when text is identical.

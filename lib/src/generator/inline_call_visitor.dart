@@ -200,19 +200,18 @@ class L10nAutoVisitor extends RecursiveAstVisitor<void> {
     final line = _lineNumberAt(node.offset, lineStarts);
     final placeholders = _extractPlaceholders(node.argumentList.arguments);
 
-    final existing = entries[key];
-
-    if (existing != null && existing.text != stringValue) {
-      throw L10nException(
-        '''Duplicate l10n key "$key" with different content.\n  First defined at: ${existing.filePath}:${existing.line}\n  Conflict at: $filePath:$line''',
-      );
-    }
-
-    entries[key] = L10nEntry(
+    final entry = L10nEntry(
       text: stringValue,
       line: line,
       filePath: filePath,
       placeholders: placeholders,
     );
+
+    final existing = entries[key];
+    if (existing != null && existing.text != entry.text) {
+      throw L10nException.duplicateKey(key, existing, entry);
+    }
+
+    entries[key] = entry;
   }
 }

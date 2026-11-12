@@ -1,7 +1,32 @@
+/// An error that stops a generation run.
+///
+/// [locations] are the `file:line` places that caused it, when it comes from
+/// the sources, so the status file can point straight at them.
 class L10nException implements Exception {
-  const L10nException(this.message);
+  const L10nException(this.message, {this.locations = const []});
 
+  /// [key] has the text of [first] at one place and of [conflict] at another.
+  factory L10nException.duplicateKey(
+    String key,
+    L10nEntry first,
+    L10nEntry conflict,
+  ) {
+    final locations = [first.location, conflict.location];
+    return L10nException(
+      'Duplicate l10n key "$key" with different content.\n'
+      '  First defined at: ${locations.first}\n'
+      '  Conflict at: ${locations.last}',
+      locations: locations,
+    );
+  }
+
+  final List<String> locations;
   final String message;
+
+  Map<String, Object> toJson() => {
+    'message': message,
+    if (locations.isNotEmpty) 'locations': locations,
+  };
 
   @override
   String toString() => message;
@@ -19,6 +44,8 @@ class L10nEntry {
   final int line;
   final Map<String, dynamic>? placeholders;
   final String text;
+
+  String get location => '$filePath:$line';
 }
 
 /// Why an `.inline(...)` call that looks like a localization marker was not

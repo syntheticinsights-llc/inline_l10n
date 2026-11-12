@@ -45,7 +45,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: any
-  inline_l10n: ^0.1.0
+  inline_l10n: ^0.4.0
 
 flutter:
   generate: true
@@ -168,25 +168,51 @@ Calls with neither a recognized receiver nor a string literal are not
 localization markers and are left alone.
 
 The warning does not fail the run: every other entry is still written, and the
-exit code is unchanged. Watch mode prints it only when the list changes. To
-also keep the current list in a file, pass `--issues-file`:
+exit code is unchanged. Watch mode prints it only when the list changes.
+
+## Status file
+
+Pass `--issues-file` to also keep the outcome of the last run in a JSON file,
+so tools and coding agents can read it instead of the terminal, which in watch
+mode often runs where nobody looks:
 
 ```sh
 dart run inline_l10n:gen_l10n --watch --issues-file=inline_issues.json
 ```
 
-The file is rewritten on every run and holds `[]` when there are no issues:
+The file is rewritten on every run:
 
 ```json
-[
-  {
-    "file": "lib/attachments.dart",
-    "line": 42,
-    "issue": "unrecognized-receiver",
-    "code": "'Dropping folders is not supported'.inline('Dropping folders is not supported')"
-  }
-]
+{
+  "lastRun": "2026-11-12T06:22:37.000Z",
+  "status": "failed",
+  "errors": [
+    {
+      "message": "Duplicate l10n key \"title\" with different content.\n  First defined at: lib/a.dart:3\n  Conflict at: lib/b.dart:7",
+      "locations": ["lib/a.dart:3", "lib/b.dart:7"]
+    }
+  ],
+  "warnings": [
+    {
+      "file": "lib/attachments.dart",
+      "line": 42,
+      "issue": "unrecognized-receiver",
+      "code": "'Dropping folders is not supported'.inline('Dropping folders is not supported')"
+    }
+  ]
+}
 ```
+
+- `lastRun`: when the run ended, in UTC. If it is older than an edit, the
+  generator has not processed that edit yet, or is not running.
+- `status`: `ok` when the ARB files and the generated code are up to date;
+  `failed` when an error stopped the run, or the `--post-gen` command failed;
+  `waiting` when watch mode leaves the ARB files alone until every source file
+  can be parsed.
+- `errors`: what stopped the run. `locations` lists the `file:line` places in
+  the sources, and is left out for errors such as a failing
+  `flutter gen-l10n`.
+- `warnings`: the calls that were not extracted, from the last extraction.
 
 ## Native declarations and other derived files
 

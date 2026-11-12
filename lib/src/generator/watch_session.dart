@@ -17,7 +17,7 @@ class L10nWatchSession {
   final L10nPipeline pipeline;
   final PostGenCommand? postGen;
 
-  final _brokenSources = <String>{};
+  final _brokenSources = <String, L10nException>{};
   final _changedSources = <String>{};
   var _arbChanged = false;
   var _arbSnapshot = <String, String>{};
@@ -112,7 +112,7 @@ class L10nWatchSession {
       pipeline.sources.refresh(path);
       _brokenSources.remove(path);
     } on L10nException catch (error) {
-      _brokenSources.add(path);
+      _brokenSources[path] = error;
       stderr.writeln('[${_timestamp()}] $error');
     }
   }
@@ -125,6 +125,7 @@ class L10nWatchSession {
         '${_brokenSources.length} source file(s) can be parsed.',
       );
       _lastCycleFailed = true;
+      issuesReport.recordRun(RunStatus.waiting, [..._brokenSources.values]);
       return;
     }
 
@@ -147,6 +148,7 @@ class L10nWatchSession {
           );
         }
         _lastCycleFailed = false;
+        issuesReport.recordRun(RunStatus.ok);
         return;
       }
 
@@ -161,39 +163,48 @@ class L10nWatchSession {
         '${writeResult.alignment.totalLocaleFiles} locale ARB file(s) '
         '(${stopwatch.elapsedMilliseconds}ms).',
       );
-      await _runPostGen();
+      final postGenError = await _runPostGen();
+      if (postGenError == null) {
+        issuesReport.recordRun(RunStatus.ok);
+      } else {
+        issuesReport.recordRun(RunStatus.failed, [postGenError]);
+      }
     } on L10nException catch (error) {
       _reportCycleFailure(error);
     } on FileSystemException catch (error) {
-      _reportCycleFailure(error);
+      _reportCycleFailure(L10nException(error.toString()));
     }
   }
 
-  /// Reports a failing [postGen] without failing the cycle: the ARB files
-  /// and the generated code are already up to date.
-  Future<void> _runPostGen() async {
+  /// Runs [postGen] and returns its failure without failing the cycle: the
+  /// ARB files and the generated code are already up to date.
+  Future<L10nException?> _runPostGen() async {
     final postGen = this.postGen;
     if (postGen == null) {
-      return;
+      return null;
     }
     final exitCode = await postGen.run();
-    if (exitCode != 0) {
-      stderr.writeln(
-        '[${_timestamp()}] ${postGen.command} failed with exit code $exitCode.',
-      );
+    if (exitCode == 0) {
+      return null;
     }
+    final error = L10nException(
+      '${postGen.command} failed with exit code $exitCode.',
+    );
+    stderr.writeln('[${_timestamp()}] $error');
+    return error;
   }
 
   void _reportIssues(List<L10nIssue> issues) {
-    final warning = issuesReport.update(issues);
+    final warning = issuesReport.updateWarnings(issues);
     if (warning != null) {
       stderr.writeln('[${_timestamp()}] $warning');
     }
   }
 
-  void _reportCycleFailure(Object error) {
+  void _reportCycleFailure(L10nException error) {
     stderr.writeln('[${_timestamp()}] $error');
     _lastCycleFailed = true;
+    issuesReport.recordRun(RunStatus.failed, [error]);
     _refreshArbSnapshot();
   }
 

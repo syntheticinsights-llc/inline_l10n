@@ -60,13 +60,18 @@ Future<void> main(List<String> arguments) async {
     }
     await _generateOnce(pipeline, issuesReport);
     await postGen?.runOrThrow();
+    issuesReport.recordRun(RunStatus.ok);
   } on L10nException catch (error) {
-    stderr.writeln(error);
-    exit(1);
+    _fail(issuesReport, error);
   } on FileSystemException catch (error) {
-    stderr.writeln(error);
-    exit(1);
+    _fail(issuesReport, L10nException(error.toString()));
   }
+}
+
+Never _fail(IssuesReport issuesReport, L10nException error) {
+  stderr.writeln(error);
+  issuesReport.recordRun(RunStatus.failed, [error]);
+  exit(1);
 }
 
 Future<void> _generateOnce(
@@ -80,7 +85,7 @@ Future<void> _generateOnce(
   pipeline.sources.scanAll();
   final extractionResult = pipeline.sources.merge();
   extractStopwatch.stop();
-  final issuesWarning = issuesReport.update(extractionResult.issues);
+  final issuesWarning = issuesReport.updateWarnings(extractionResult.issues);
   if (issuesWarning != null) {
     stderr.writeln('$issuesWarning\n');
   }

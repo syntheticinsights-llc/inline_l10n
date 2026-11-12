@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking:** the `--issues-file` JSON is now the status of the last run
+  instead of a list of warnings: `lastRun` (UTC), `status` (`ok`, `failed`,
+  or `waiting`), `errors` with their source `locations`, and the former list
+  as `warnings`. Errors that stop a run, such as duplicate keys, unparsable
+  sources, or a failing `flutter gen-l10n` or `--post-gen` command, were only
+  printed to the terminal, so a tool watching the file could not tell a
+  failed run from one that had not happened yet.
+
 ## 0.4.0
 
 - Keep the declared app languages in step with the ARB files on every run:
