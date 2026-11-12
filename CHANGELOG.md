@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1
+
+- Watch mode finds changes by polling instead of by native change
+  notifications: it re-lists the watched directories and stats every file every
+  5 seconds (`L10nConfig.watchPollInterval`). A native watcher that stops
+  delivering events leaves the process alive and idle, quietly ignoring every
+  later edit, and nothing lets the session notice that it went deaf. Polling
+  removes that state instead of detecting it, and reports removed files the same
+  way. Measured cost on a project with about 1900 Dart files is 12ms per poll.
+- `flutter gen-l10n` and `--post-gen` are killed after two minutes instead of
+  waiting forever. A command that never ends used to hold the watch session's
+  cycle open, and every later change was dropped without a word.
+
 ## 0.5.0
 
 - **Breaking:** the `--issues-file` JSON is now the status of the last run

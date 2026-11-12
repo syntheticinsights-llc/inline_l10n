@@ -17,6 +17,11 @@ class L10nConfig {
   static const sourceDir = 'lib';
   static const watchDebounce = Duration(milliseconds: 200);
 
+  /// How often watch mode re-reads the watched directories to notice changes
+  /// on its own, without relying on native change notifications. See
+  /// `L10nWatchSession`.
+  static const watchPollInterval = Duration(seconds: 5);
+
   static String resolveArbDir() =>
       _readL10nYamlOption('arb-dir') ?? defaultL10nDir;
 

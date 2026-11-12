@@ -10,6 +10,14 @@ import 'l10n_pipeline.dart';
 import 'models.dart';
 import 'post_gen_command.dart';
 
+/// Regenerates on every change until the user presses Ctrl+C.
+///
+/// Changes come from [PollingDirectoryWatcher] rather than from native change
+/// notifications: a native watcher that drops an event is never re-subscribed,
+/// and the session cannot notice that it went deaf — the process stays alive and
+/// idle and every later edit is ignored in silence. Polling makes the file
+/// system the source of truth once per interval instead, and reports deletions
+/// the same way.
 class L10nWatchSession {
   L10nWatchSession(this.pipeline, this.issuesReport, [this.postGen]);
 
@@ -36,9 +44,14 @@ class L10nWatchSession {
       ))
         pipeline.l10nRoot,
     ];
+    // Built directly: the DirectoryWatcher factory ignores pollingDelay where
+    // native watching is supported, which is every platform we run on.
     final watchers = [
       for (final directory in watchedDirectories)
-        DirectoryWatcher(directory.path),
+        PollingDirectoryWatcher(
+          directory.path,
+          pollingDelay: L10nConfig.watchPollInterval,
+        ),
     ];
     final subscriptions = [
       for (final watcher in watchers)
