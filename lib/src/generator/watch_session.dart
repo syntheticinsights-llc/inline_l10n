@@ -18,6 +18,10 @@ import 'post_gen_command.dart';
 /// idle and every later edit is ignored in silence. Polling makes the file
 /// system the source of truth once per interval instead, and reports deletions
 /// the same way.
+///
+/// The same interval re-reads the workspace members (see
+/// [L10nSources.reconcileRoots]), so a package added while the session runs is
+/// watched and scanned, and a removed one stops counting.
 class L10nWatchSession {
   L10nWatchSession(this.pipeline, this.issuesReport, [this.postGen]);
 
@@ -27,40 +31,33 @@ class L10nWatchSession {
 
   final _brokenSources = <String, L10nException>{};
   final _changedSources = <String>{};
+  final _rootSubscriptions = <String, StreamSubscription<WatchEvent>>{};
   var _arbChanged = false;
   var _arbSnapshot = <String, String>{};
   Timer? _debounce;
   var _genL10nPending = false;
   var _lastCycleFailed = false;
+  var _reconcilingRoots = false;
+  var _rootsChanged = false;
   var _running = false;
 
   Future<void> start() async {
-    final watchedDirectories = [
-      ...pipeline.sources.roots,
-      if (!pipeline.sources.roots.any(
-        (root) => pipeline.l10nRoot.path.startsWith(
-          '${root.path}${Platform.pathSeparator}',
-        ),
-      ))
-        pipeline.l10nRoot,
-    ];
-    // Built directly: the DirectoryWatcher factory ignores pollingDelay where
-    // native watching is supported, which is every platform we run on.
-    final watchers = [
-      for (final directory in watchedDirectories)
-        PollingDirectoryWatcher(
-          directory.path,
-          pollingDelay: L10nConfig.watchPollInterval,
-        ),
-    ];
-    final subscriptions = [
-      for (final watcher in watchers)
-        watcher.events.listen(
-          _onEvent,
-          onError: (Object error) => stderr.writeln('Watcher error: $error'),
-        ),
-    ];
-    await Future.wait(watchers.map((watcher) => watcher.ready));
+    final roots = pipeline.sources.roots;
+    for (final root in roots) {
+      _rootSubscriptions[root.path] = await _watch(root);
+    }
+    final l10nSubscription =
+        roots.any(
+          (root) => pipeline.l10nRoot.path.startsWith(
+            '${root.path}${Platform.pathSeparator}',
+          ),
+        )
+        ? null
+        : await _watch(pipeline.l10nRoot);
+    final rootPoll = Timer.periodic(
+      L10nConfig.watchPollInterval,
+      (_) => _reconcileRoots(),
+    );
 
     _running = true;
     try {
@@ -72,17 +69,76 @@ class L10nWatchSession {
       _running = false;
     }
 
+    final watchedCount =
+        _rootSubscriptions.length + (l10nSubscription == null ? 0 : 1);
     stdout.writeln(
-      'Watching ${watchedDirectories.length} director'
-      '${watchedDirectories.length == 1 ? 'y' : 'ies'} for changes. '
+      'Watching $watchedCount director'
+      '${watchedCount == 1 ? 'y' : 'ies'} for changes. '
       'Press Ctrl+C to stop.',
     );
     _scheduleIfPending();
 
     await ProcessSignal.sigint.watch().first;
+    rootPoll.cancel();
     _debounce?.cancel();
-    await Future.wait(subscriptions.map((subscription) => subscription.cancel()));
+    await Future.wait([
+      for (final subscription in _rootSubscriptions.values)
+        subscription.cancel(),
+      ?l10nSubscription?.cancel(),
+    ]);
     stdout.writeln('\nStopped watching.');
+  }
+
+  Future<StreamSubscription<WatchEvent>> _watch(Directory directory) async {
+    // Built directly: the DirectoryWatcher factory ignores pollingDelay where
+    // native watching is supported, which is every platform we run on.
+    final watcher = PollingDirectoryWatcher(
+      directory.path,
+      pollingDelay: L10nConfig.watchPollInterval,
+    );
+    final subscription = watcher.events.listen(
+      _onEvent,
+      onError: (Object error) => stderr.writeln('Watcher error: $error'),
+    );
+    await watcher.ready;
+    return subscription;
+  }
+
+  Future<void> _reconcileRoots() async {
+    if (_reconcilingRoots) {
+      return;
+    }
+
+    _reconcilingRoots = true;
+    try {
+      final (:added, :removed) = pipeline.sources.reconcileRoots();
+      if (added.isEmpty && removed.isEmpty) {
+        return;
+      }
+
+      for (final root in removed) {
+        await _rootSubscriptions.remove(root.path)?.cancel();
+      }
+      for (final root in added) {
+        _rootSubscriptions[root.path] = await _watch(root);
+        _changedSources.addAll([
+          for (final file in pipeline.sources.collectDartFilesIn(root))
+            file.path,
+        ]);
+      }
+      stdout.writeln(
+        '[${_timestamp()}] Workspace changed: watching ${added.length} more '
+        'and ${removed.length} fewer package source director'
+        '${added.length + removed.length == 1 ? 'y' : 'ies'}.',
+      );
+      _rootsChanged = true;
+      _scheduleIfPending();
+    } on Exception catch (error) {
+      // A pubspec.yaml saved half edited cannot be read; the next poll retries.
+      stderr.writeln('[${_timestamp()}] Could not re-read the workspace: $error');
+    } finally {
+      _reconcilingRoots = false;
+    }
   }
 
   void _onEvent(WatchEvent event) {
@@ -111,6 +167,7 @@ class L10nWatchSession {
       _changedSources.clear();
       final arbChanged = _arbChanged;
       _arbChanged = false;
+      _rootsChanged = false;
 
       changedSources.forEach(_refreshSource);
       await _runCycle(forceGenL10n: arbChanged);
@@ -230,7 +287,7 @@ class L10nWatchSession {
   }
 
   void _scheduleIfPending() {
-    if (_changedSources.isNotEmpty || _arbChanged) {
+    if (_changedSources.isNotEmpty || _arbChanged || _rootsChanged) {
       _debounce?.cancel();
       _debounce = Timer(L10nConfig.watchDebounce, _flush);
     }

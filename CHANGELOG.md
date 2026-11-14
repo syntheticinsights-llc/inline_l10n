@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Watch mode follows the workspace: every poll also re-reads the workspace
+  members, so a package added after the session started is watched and
+  scanned, and a removed one stops counting. Before, the members were read
+  once at startup, so the `.inline(...)` calls of a newer package were never
+  seen, and a key moved into it read as deleted, which dropped its
+  translations from every locale ARB file.
+
 ## 0.5.1
 
 - Watch mode finds changes by polling instead of by native change

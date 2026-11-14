@@ -9,47 +9,88 @@ import 'workspace.dart';
 
 typedef _FileScan = ({Map<String, L10nEntry> entries, List<L10nIssue> issues});
 
+/// The Dart sources that `.inline(...)` calls are extracted from: the `lib/`
+/// directory of the workspace root and of every workspace member, or of the
+/// current package outside a workspace.
+///
+/// The roots follow the workspace: [reconcileRoots] re-reads its members, so a
+/// long watch session picks up a package added after it started. Without that,
+/// the calls in such a package are never seen, and every key that moved into it
+/// reads as deleted, which drops the key's translations from every locale.
 class L10nSources {
-  L10nSources._(this.sourceBase, this.roots);
+  L10nSources._(this.sourceBase, this._roots);
 
   factory L10nSources.resolve() {
     final workspace = findWorkspace();
-    final sourceBase = workspace?.root ?? Directory(L10nConfig.sourceDir);
-    final sourceRoots = workspace == null
-        ? [Directory(L10nConfig.sourceDir).absolute]
-        : [
-            Directory.fromUri(workspace.root.uri.resolve('lib/')),
-            for (final member in workspace.members)
-              Directory.fromUri(workspace.root.uri.resolve('$member/lib/')),
-          ];
-    final existingRoots = [
-      for (final root in sourceRoots)
-        if (root.existsSync()) Directory(trimTrailingSeparator(root.path)),
-    ];
-    if (existingRoots.isEmpty) {
+    final roots = _resolveRoots(workspace);
+    if (roots.isEmpty) {
       throw const L10nException(
         'No lib directories found for localization extraction.',
       );
     }
 
-    return L10nSources._(sourceBase, existingRoots);
+    return L10nSources._(
+      workspace?.root ?? Directory(L10nConfig.sourceDir),
+      roots,
+    );
   }
 
   final Directory sourceBase;
-  final List<Directory> roots;
+  List<Directory> _roots;
 
   final _files = <String, _FileScan>{};
 
+  List<Directory> get roots => List.unmodifiable(_roots);
+
   List<File> collectDartFiles() => [
-    for (final root in roots) ..._collectDartFiles(root),
+    for (final root in _roots) ...collectDartFilesIn(root),
   ]..sort((a, b) => a.path.compareTo(b.path));
+
+  List<File> collectDartFilesIn(Directory root) => root
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where(
+        (file) =>
+            file.path.endsWith('.dart') && !_isGeneratedDartFile(file.path),
+      )
+      .toList();
 
   bool tracks(String path) =>
       path.endsWith('.dart') &&
       !_isGeneratedDartFile(path) &&
-      roots.any(
-        (root) => path.startsWith('${root.path}${Platform.pathSeparator}'),
-      );
+      _roots.any((root) => _isUnder(path, root));
+
+  /// Re-reads the workspace members and returns the roots that appeared and
+  /// the ones that went away; the scans of a removed root's files are dropped.
+  /// An added root is only listed: its files are scanned by whoever refreshes
+  /// them, as with any other change.
+  ///
+  /// A workspace that resolves to no roots at all, as while its `pubspec.yaml`
+  /// is half edited, changes nothing.
+  ({List<Directory> added, List<Directory> removed}) reconcileRoots() {
+    final resolved = _resolveRoots(findWorkspace());
+    if (resolved.isEmpty) {
+      return (added: const [], removed: const []);
+    }
+
+    final resolvedPaths = {for (final root in resolved) root.path};
+    final currentPaths = {for (final root in _roots) root.path};
+    final added = [
+      for (final root in resolved)
+        if (!currentPaths.contains(root.path)) root,
+    ];
+    final removed = [
+      for (final root in _roots)
+        if (!resolvedPaths.contains(root.path)) root,
+    ];
+
+    for (final root in removed) {
+      _files.removeWhere((path, _) => _isUnder(path, root));
+    }
+    _roots = resolved;
+
+    return (added: added, removed: removed);
+  }
 
   void scanAll() {
     _files.clear();
@@ -129,15 +170,6 @@ class L10nSources {
     return starts;
   }
 
-  static List<File> _collectDartFiles(Directory sourceRoot) => sourceRoot
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where(
-        (file) =>
-            file.path.endsWith('.dart') && !_isGeneratedDartFile(file.path),
-      )
-      .toList();
-
   static _FileScan _scanFile(
     File file,
     Directory sourceBase,
@@ -151,6 +183,26 @@ class L10nSources {
 
     return (entries: visitor.entries, issues: visitor.issues);
   }
+
+  static List<Directory> _resolveRoots(
+    ({Directory root, List<String> members})? workspace,
+  ) {
+    final candidates = workspace == null
+        ? [Directory(L10nConfig.sourceDir).absolute]
+        : [
+            Directory.fromUri(workspace.root.uri.resolve('lib/')),
+            for (final member in workspace.members)
+              Directory.fromUri(workspace.root.uri.resolve('$member/lib/')),
+          ];
+
+    return [
+      for (final root in candidates)
+        if (root.existsSync()) Directory(trimTrailingSeparator(root.path)),
+    ];
+  }
+
+  static bool _isUnder(String path, Directory root) =>
+      path.startsWith('${root.path}${Platform.pathSeparator}');
 
   static bool _isGeneratedDartFile(String path) =>
       L10nConfig.generatedFileSuffixes.any(path.endsWith);
