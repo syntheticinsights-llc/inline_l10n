@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2
 
 - Watch mode follows the workspace: every poll also re-reads the workspace
   members, so a package added after the session started is watched and
